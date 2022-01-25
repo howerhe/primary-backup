@@ -1,0 +1,14 @@
+{
+    "files.associations": {
+        "consistency.h": "c",
+        "message.h": "c",
+        "pool.h": "c",
+        "socket.h": "c",
+        "store.h": "c",
+        "synchronization.h": "c"
+    },
+    "cSpell.words": [
+        "zipf",
+        "Zipf's"
+    ]
+}
