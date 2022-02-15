@@ -22,7 +22,7 @@ int main(int argc, char *argv[])
 	char *server_port = "9999";
 	struct message *server_message = malloc(sizeof(struct message));
 	assert(server_message);
-	server_message->type = MESSAGE_SERVER_RESPONSE;
+	server_message->type = MESSAGE_SERVER_RES;
 	server_message->index = 1;
 	server_message->value = 2;
 	server_message->version = 3;
