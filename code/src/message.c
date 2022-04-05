@@ -1,3 +1,4 @@
+#include <stdatomic.h>
 #include <stdio.h>
 
 #include "message.h"
@@ -11,7 +12,7 @@ int message_set_id(struct message *msg)
 		return -1;
 	}
 
-	global_id++;
+	atomic_fetch_add(&global_id, 1);
 	msg->id = global_id;
 
 	return 0;
