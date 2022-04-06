@@ -134,15 +134,27 @@ int main(int argc, char *argv[])
 				pthread_mutex_lock(
 					&(s->shelf[info->message->thread_id]
 						  .mutex));
+
+				// Need to free old message on the shelf.
+				free(s->shelf[info->message->thread_id]
+					     .msgs[info->message->backup_id]);
+				s->shelf[info->message->thread_id]
+					.msgs[info->message->backup_id] = NULL;
+
 				s->shelf[info->message->thread_id]
 					.msgs[info->message->backup_id] =
 					info->message;
 				pthread_cond_signal(
 					&(s->shelf[info->message->thread_id]
 						  .cond));
+
 				pthread_mutex_unlock(
 					&(s->shelf[info->message->thread_id]
 						  .mutex));
+
+				// Need to free info.
+				free(info);
+				info = NULL;
 			} else {
 				// need to have some jump table to choose the correct semantics
 				pool_add(pool, consistency_eventual_primary,

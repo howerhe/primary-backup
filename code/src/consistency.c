@@ -17,6 +17,8 @@ void *consistency_eventual_backup(void *info)
 		((struct consistency_handler_info *)info)->server;
 	struct message *req =
 		((struct consistency_handler_info *)info)->message;
+	free(info);
+	info = NULL;
 
 	char *err_msg = NULL;
 	struct message *res;
@@ -101,6 +103,8 @@ void *consistency_eventual_primary(void *info)
 		((struct consistency_handler_info *)info)->server;
 	struct message *req =
 		((struct consistency_handler_info *)info)->message;
+	free(info);
+	info = NULL;
 
 	char *err_msg = NULL;
 	struct message *res;
@@ -202,13 +206,10 @@ void *consistency_eventual_primary(void *info)
 			for (int i = 0; i < s->backup_num; i++) {
 				if (rv == ETIMEDOUT && synced_flag[i] == 0) {
 					assert(message_set_id(sync) == 0);
-					if (socket_send(s->fd, sync,
-							s->backup_addr[i],
-							s->backup_port[i]) !=
-					    0) {
-						err_msg = "cannot send message";
-						goto error;
-					}
+					assert(socket_send(s->fd, sync,
+							   s->backup_addr[i],
+							   s->backup_port[i]) ==
+					       0);
 				} else if (rv == 0 &&
 					   s->shelf[tid].msgs[i] != NULL) {
 					synced_flag[i] = 1;
