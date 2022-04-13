@@ -212,6 +212,8 @@ void *client_routine(void *arg)
 
 			gettimeofday(&start, NULL);
 
+			assert(message_set_id(&req) == 0);
+			req.client_message_id = req.id;
 			if (socket_send(fd, &req, *(backup_addr + backup_no),
 					*(backup_port + backup_no)) != 0) {
 				fprintf(stderr,
@@ -246,6 +248,8 @@ void *client_routine(void *arg)
 
 			gettimeofday(&start, NULL);
 
+			assert(message_set_id(&req) == 0);
+			req.client_message_id = req.id;
 			if (socket_send(fd, &req, primary_addr, primary_port) !=
 			    0) {
 				fprintf(stderr,

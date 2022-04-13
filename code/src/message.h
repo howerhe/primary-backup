@@ -38,6 +38,7 @@ struct message {
 	char port[MESSAGE_PORT_SIZE];
 
 	// For backup synchronization
+	unsigned client_message_id;
 	unsigned thread_id;
 	unsigned backup_id;
 

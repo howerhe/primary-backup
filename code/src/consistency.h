@@ -21,6 +21,7 @@ struct consistency_thread {
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
 	struct message **msgs;
+	unsigned latest_client_msg_id;
 	unsigned *latest_msg_ids;
 	int block_flag;
 };

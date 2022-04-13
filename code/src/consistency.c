@@ -11,6 +11,8 @@
 #include "socket.h"
 #include "store.h"
 
+// #define DEBUG
+
 void *consistency_eventual_backup(void *info)
 {
 	struct consistency_server_state *s =
@@ -44,6 +46,9 @@ void *consistency_eventual_backup(void *info)
 
 	switch (type) {
 	case MESSAGE_CLIENT_READ:
+#ifdef DEBUG
+		printf("MESSAGE_CLIENT_READ\n");
+#endif
 		type = MESSAGE_SERVER_RES;
 		if (store_read(s->store, index, &value, &version) != 0) {
 			err_msg = "store_read() failed\n";
@@ -51,6 +56,9 @@ void *consistency_eventual_backup(void *info)
 		}
 		break;
 	case MESSAGE_PRIMARY_SYNC:
+#ifdef DEBUG
+		printf("MESSAGE_PRIMARY_SYNC\n");
+#endif
 		type = MESSAGE_BACKUP_ACK;
 		if (store_synchronize(s->store, index, &value, &version) != 0) {
 			err_msg = "store_synchronize() failed\n";
@@ -71,6 +79,7 @@ void *consistency_eventual_backup(void *info)
 	strncpy(res->port, s->port, MESSAGE_PORT_SIZE);
 
 	if (req->type == MESSAGE_PRIMARY_SYNC) {
+		res->client_message_id = req->client_message_id;
 		res->thread_id = req->thread_id;
 		res->backup_id = s->backup_id;
 	}
@@ -79,6 +88,9 @@ void *consistency_eventual_backup(void *info)
 		err_msg = "cannot send message";
 		goto error;
 	}
+#ifdef DEBUG
+	printf("sent\n");
+#endif
 
 clean:
 	free(res);
@@ -98,7 +110,6 @@ error:
 void *consistency_eventual_primary(void *info)
 {
 	unsigned tid = ((struct consistency_handler_info *)info)->id;
-	;
 	struct consistency_server_state *s =
 		((struct consistency_handler_info *)info)->server;
 	struct message *req =
@@ -130,6 +141,9 @@ void *consistency_eventual_primary(void *info)
 
 	switch (type) {
 	case MESSAGE_CLIENT_READ:
+#ifdef DEBUG
+		printf("MESSAGE_CLIENT_READ\n");
+#endif
 		type = MESSAGE_SERVER_RES;
 		if (store_read(s->store, index, &value, &version) != 0) {
 			err_msg = "store_read() failed\n";
@@ -137,6 +151,9 @@ void *consistency_eventual_primary(void *info)
 		}
 		break;
 	case MESSAGE_CLIENT_WRITE:
+#ifdef DEBUG
+		printf("MESSAGE_CLIENT_WRITE\n");
+#endif
 		type = MESSAGE_SERVER_RES;
 		if (store_update(s->store, index, &value, &version) != 0) {
 			err_msg = "store_update() failed\n";
@@ -160,8 +177,14 @@ void *consistency_eventual_primary(void *info)
 		err_msg = "cannot send message";
 		goto error;
 	}
+#ifdef DEBUG
+	printf("client response sent\n");
+#endif
 
 	if (req->type == MESSAGE_CLIENT_WRITE) {
+		struct consistency_thread *shelf = &(s->shelf[tid]);
+		shelf->latest_client_msg_id = req->client_message_id;
+
 		struct message *sync = malloc(sizeof(struct message));
 		assert(sync);
 
@@ -173,6 +196,7 @@ void *consistency_eventual_primary(void *info)
 		sync->version = version;
 		strncpy(sync->addr, s->addr, MESSAGE_ADDR_SIZE);
 		strncpy(sync->port, s->port, MESSAGE_PORT_SIZE);
+		sync->client_message_id = req->client_message_id;
 		sync->thread_id = tid;
 		for (int i = 0; i < s->backup_num; i++) {
 			assert(message_set_id(sync) == 0);
@@ -189,19 +213,27 @@ void *consistency_eventual_primary(void *info)
 		for (int i = 0; i < s->backup_num; i++)
 			synced_flag[i] = 0;
 		struct timespec t;
-		memset(&t, 0, sizeof(struct timespec));
-		t.tv_sec = CONSISTENCY_BACKUP_WAIT_TIME;
+		clock_gettime(CLOCK_REALTIME, &t);
+		t.tv_sec += CONSISTENCY_BACKUP_WAIT_TIME;
 
 		while (1) {
-			pthread_mutex_lock(&(s->shelf[tid].mutex));
+			pthread_mutex_lock(&(shelf->mutex));
 			int rv = 0;
-			while (s->shelf[tid].block_flag == 1) {
+			while (shelf->block_flag == 1) {
 				rv = pthread_cond_timedwait(
-					&(s->shelf[tid].cond),
-					&(s->shelf[tid].mutex), &t);
+					&(shelf->cond), &(shelf->mutex), &t);
 				if (rv == ETIMEDOUT)
 					break;
 			}
+			shelf->block_flag = 1;
+
+#ifdef DEBUG
+			printf("SYNC waked up: ");
+			if (rv == ETIMEDOUT)
+				printf("timed out\n");
+			else
+				printf("by backup\n");
+#endif
 
 			for (int i = 0; i < s->backup_num; i++) {
 				if (rv == ETIMEDOUT && synced_flag[i] == 0) {
@@ -210,29 +242,29 @@ void *consistency_eventual_primary(void *info)
 							   s->backup_addr[i],
 							   s->backup_port[i]) ==
 					       0);
-				} else if (rv == 0 &&
-					   s->shelf[tid].msgs[i] != NULL) {
+				} else if (rv == 0 && shelf->msgs[i] != NULL &&
+					   synced_flag[i] == 0) {
 					synced_flag[i] = 1;
 					synced_num++;
-					free(s->shelf[tid].msgs[i]);
-					s->shelf[tid].msgs[i] = NULL;
-					s->shelf[tid].block_flag = 1;
-					break;
+					free(shelf->msgs[i]);
+					shelf->msgs[i] = NULL;
 				}
 			}
 
-			if (synced_num == s->backup_num) {
-				pthread_mutex_unlock(&(s->shelf[tid].mutex));
-				free(sync);
-				sync = NULL;
-				break;
-			}
 			pthread_mutex_unlock(&(s->shelf[tid].mutex));
+			if (synced_num == s->backup_num)
+				break;
 		}
 
 		free(synced_flag);
 		synced_flag = NULL;
+		free(sync);
+		sync = NULL;
+		shelf = NULL;
 	}
+#ifdef DEBUG
+	printf("sync finished\n");
+#endif
 
 clean:
 	free(res);

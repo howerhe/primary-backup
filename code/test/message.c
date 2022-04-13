@@ -17,7 +17,7 @@ int main(void)
 	assert(message_set_id(NULL) != 0);
 
 	struct message *msg = NULL;
-	for (int i = 1; i <= 10; i++) {
+	for (int i = 0; i < 10; i++) {
 		msg = malloc(sizeof(struct message));
 		memset(msg, 0, sizeof(struct message));
 
@@ -32,7 +32,7 @@ int main(void)
 	memset(msg, 0, sizeof(struct message));
 	assert(message_set_id(NULL) != 0);
 	assert(message_set_id(msg) == 0);
-	assert(msg->id == 11);
+	assert(msg->id == 10);
 	free(msg);
 	msg = NULL;
 
@@ -50,7 +50,7 @@ int main(void)
 	memset(msg, 0, sizeof(struct message));
 	assert(message_set_id(NULL) != 0);
 	assert(message_set_id(msg) == 0);
-	assert(msg->id == 12 + THREAD_NUM * CYCLE_NUM);
+	assert(msg->id == 11 + THREAD_NUM * CYCLE_NUM);
 	free(msg);
 	msg = NULL;
 

@@ -13,6 +13,8 @@
 #include "src/socket.h"
 #include "src/pool.h"
 
+// #define DEBUG
+
 int main(int argc, char *argv[])
 {
 	if (argc < 8) {
@@ -84,6 +86,7 @@ int main(int argc, char *argv[])
 			s->shelf[i].msgs = malloc(sizeof(struct message *) *
 						  s->backup_num);
 			assert(s->shelf[i].msgs);
+			s->shelf[i].latest_client_msg_id = 0;
 			s->shelf[i].latest_msg_ids =
 				malloc(sizeof(unsigned) * s->backup_num);
 			assert(s->shelf[i].latest_msg_ids);
@@ -91,6 +94,7 @@ int main(int argc, char *argv[])
 				s->shelf[i].msgs[j] = NULL;
 				s->shelf[i].latest_msg_ids[j] = 0;
 			}
+			s->shelf[i].block_flag = 1;
 		}
 	}
 
@@ -112,54 +116,58 @@ int main(int argc, char *argv[])
 			continue;
 		}
 
+#ifdef DEBUG
+		printf("new msg id %u, type %d, index %u, value %d, version %u, from %s:%s, \n",
+		       info->message->id, info->message->type,
+		       info->message->index, info->message->value,
+		       info->message->version, info->message->addr,
+		       info->message->port);
+#endif
+
 		if (role == CONSISTENCY_ROLE_BACKUP) {
 			pool_add(pool, consistency_eventual_backup, info);
-		} else {
-			if (info->message->type == MESSAGE_BACKUP_ACK) {
-				if (info->message->id <=
-				    s->shelf->latest_msg_ids
-					    [info->message->backup_id]) {
-					free(info->message);
-					info->message = NULL;
-					free(info);
-					info = NULL;
-					continue;
-				} else {
-					s->shelf->latest_msg_ids
-						[info->message->backup_id] =
-						info->message->id;
-				}
-				s->shelf[info->message->thread_id].block_flag =
-					0;
-				pthread_mutex_lock(
-					&(s->shelf[info->message->thread_id]
-						  .mutex));
+		} else if (info->message->type == MESSAGE_BACKUP_ACK) {
+			struct message *msg = info->message;
+			struct consistency_thread *shelf =
+				&(s->shelf[msg->thread_id]);
 
-				// Need to free old message on the shelf.
-				free(s->shelf[info->message->thread_id]
-					     .msgs[info->message->backup_id]);
-				s->shelf[info->message->thread_id]
-					.msgs[info->message->backup_id] = NULL;
-
-				s->shelf[info->message->thread_id]
-					.msgs[info->message->backup_id] =
-					info->message;
-				pthread_cond_signal(
-					&(s->shelf[info->message->thread_id]
-						  .cond));
-
-				pthread_mutex_unlock(
-					&(s->shelf[info->message->thread_id]
-						  .mutex));
-
-				// Need to free info.
+			pthread_mutex_lock(&(shelf->mutex));
+			if (msg->client_message_id !=
+				    shelf->latest_client_msg_id ||
+			    msg->id < shelf->latest_msg_ids[msg->backup_id]) {
+				pthread_mutex_unlock(&(shelf->mutex));
+#ifdef DEBUG
+				printf("id %d ignored.\n", info->message->id);
+#endif
+				shelf = NULL;
+				msg = NULL;
+				free(info->message);
+				info->message = NULL;
 				free(info);
 				info = NULL;
-			} else {
-				// need to have some jump table to choose the correct semantics
-				pool_add(pool, consistency_eventual_primary,
-					 info);
+				continue;
 			}
+
+			shelf->latest_msg_ids[info->message->backup_id] =
+				msg->id;
+			shelf->block_flag = 0;
+
+			// Need to free old message on the shelf.
+			free(shelf->msgs[msg->backup_id]);
+			shelf->msgs[msg->backup_id] = NULL;
+
+			shelf->msgs[msg->backup_id] = info->message;
+			pthread_cond_signal(&(shelf->cond));
+			pthread_mutex_unlock(&(shelf->mutex));
+
+			// Need to free info.
+			shelf = NULL;
+			msg = NULL;
+			free(info);
+			info = NULL;
+		} else {
+			// need to have some jump table to choose the correct semantics
+			pool_add(pool, consistency_eventual_primary, info);
 		}
 	}
 	// Ignore steps to release resources for now.
