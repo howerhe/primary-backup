@@ -1,3 +1,6 @@
+// total running time unit: ms
+// remote elapsed time unit: us
+
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h>
@@ -117,11 +120,25 @@ int main(int argc, char *argv[])
 	srand(time(NULL));
 	init_zipf(ZIPF_ALPHA, store_size - 1);
 
+	long long elapsed;
+	struct timeval start, end;
+	gettimeofday(&start, NULL);
+
 	for (int i = 0; i < thread_num; i++)
 		pthread_create(thread_ids + i, NULL, client_routine, infos + i);
 
 	for (int i = 0; i < thread_num; i++)
 		pthread_join(*(thread_ids + i), NULL);
+
+	gettimeofday(&end, NULL);
+	elapsed = (end.tv_sec - start.tv_sec) * 1000 +
+		  (end.tv_usec - start.tv_usec) / 1000;
+
+	FILE *fp_time = fopen("client_time.txt", "w");
+	assert(fp_time);
+	fprintf(fp_time, "%lld\n", elapsed);
+	fclose(fp_time);
+	fp_time = NULL;
 
 	for (int i = 0; i < thread_num; i++) {
 		char file_name[20];
