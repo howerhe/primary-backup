@@ -125,7 +125,7 @@ int main(int argc, char *argv[])
 #endif
 
 		if (role == CONSISTENCY_ROLE_BACKUP) {
-			pool_add(pool, consistency_eventual_backup, info);
+			pool_add(pool, consistency_read_my_writes_backup, info);
 		} else if (info->message->type == MESSAGE_BACKUP_ACK) {
 			struct message *msg = info->message;
 			struct consistency_thread *shelf =

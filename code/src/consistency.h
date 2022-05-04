@@ -12,6 +12,7 @@
 #define CONSISTENCY_SEMANTICS_MONOTONIC_READS 2
 
 #define CONSISTENCY_BACKUP_WAIT_TIME 5
+#define CONSISTENCY_BACKUP_SLEEP_TIME 5
 
 /**
  * @brief Synchronization information of worker threads.
@@ -73,5 +74,41 @@ void *consistency_eventual_backup(void *info);
  * @return void* 
  */
 void *consistency_eventual_primary(void *info);
+
+/**
+ * @brief Handle requests with read-my-writes consistency semantics by a backup
+ * server.
+ *
+ * @param info bundled info struct
+ * @return void* 
+ */
+void *consistency_read_my_writes_backup(void *info);
+
+/**
+ * @brief Handle requests with read-my-writes consistency semantics by the primary
+ * server.
+ *
+ * @param info bundled info struct
+ * @return void* 
+ */
+void *consistency_read_my_writes_primary(void *info);
+
+/**
+ * @brief Handle requests with monotonic reads consistency semantics by a backup
+ * server.
+ *
+ * @param info bundled info struct
+ * @return void* 
+ */
+void *consistency_monotonic_reads_backup(void *info);
+
+/**
+ * @brief Handle requests with monotonic reads consistency semantics by the primary
+ * server.
+ *
+ * @param info bundled info struct
+ * @return void* 
+ */
+void *consistency_monotonic_reads_primary(void *info);
 
 #endif
