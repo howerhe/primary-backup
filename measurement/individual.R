@@ -23,7 +23,6 @@ for (i in (1:(length(mixed)))) {
 }
 
 # Count violations and prepare for plotting.
-fileConn<-file("invalid.txt")
 primary = list()
 backup = list()
 violations = 0
@@ -31,14 +30,18 @@ version_difference_min = 0
 version_difference_max = 0
 latency_min = 0
 latency_max = 0
+
+out = file("primary_violations.txt", "w")
+
 for (i in (1:strtoi(threads))) {
   mixed[[i]] %>%
     filter(operation == "1") %>%
     mutate(version_diff = remote_version - local_version) ->
     primary[[i]]
   if (min(primary[[i]][,"version_diff"]) < 0) {
-    print(paste("primary", i, "failed.", sep = " "))
-    writeLines(paste("primary", i, "failed.", sep = " "), fileConn)
+    message = paste("primary in thread", i, "failed.", sep = " ")
+    print(message)
+    write(message, file = "primary_violations.txt", append = TRUE)
   }
   
   mixed[[i]] %>%
@@ -51,7 +54,8 @@ for (i in (1:strtoi(threads))) {
   version_difference_max = max(version_difference_max, max(backup[[i]][,"version_diff"]))
   latency_max = max(latency_max, max(backup[[i]][,"remote_time"]))
 }
-close(fileConn)
+
+close(out)
 
 # Plot the graphs.
 p_version = list()
@@ -69,7 +73,7 @@ for (i in (1:strtoi(threads))) {
 }
 
 # Output violations
-fileConn<-file("violations.txt")
+fileConn<-file("backup_violations.txt")
 writeLines(as.character(violations), fileConn)
 close(fileConn)
 

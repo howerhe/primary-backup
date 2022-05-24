@@ -11,8 +11,8 @@
 #define CONSISTENCY_SEMANTICS_READ_MY_WRITES 1
 #define CONSISTENCY_SEMANTICS_MONOTONIC_READS 2
 
-#define CONSISTENCY_BACKUP_WAIT_TIME 5
-#define CONSISTENCY_BACKUP_SLEEP_TIME 5
+#define CONSISTENCY_PRIMARY_WAIT_TIME 5 // seconds
+#define CONSISTENCY_BACKUP_WAIT_TIME 50 // micro seconds
 
 /**
  * @brief Synchronization information of worker threads.

@@ -214,7 +214,7 @@ void *consistency_eventual_primary(void *info)
 			synced_flag[i] = 0;
 		struct timespec t;
 		clock_gettime(CLOCK_REALTIME, &t);
-		t.tv_sec += CONSISTENCY_BACKUP_WAIT_TIME;
+		t.tv_sec += CONSISTENCY_PRIMARY_WAIT_TIME;
 
 		while (1) {
 			pthread_mutex_lock(&(shelf->mutex));
@@ -324,7 +324,7 @@ void *consistency_read_my_writes_backup(void *info)
 		int loop_counter = 0;
 		do {
 			if (loop_counter > 0)
-				sleep(CONSISTENCY_BACKUP_SLEEP_TIME);
+				usleep(CONSISTENCY_BACKUP_WAIT_TIME);
 			if (store_read(s->store, index, &value_tmp,
 				       &version_tmp) != 0) {
 				err_msg = "store_read() failed\n";
@@ -436,7 +436,7 @@ void *consistency_monotonic_reads_backup(void *info)
 		int loop_counter = 0;
 		do {
 			if (loop_counter > 0)
-				sleep(CONSISTENCY_BACKUP_SLEEP_TIME);
+				usleep(CONSISTENCY_BACKUP_WAIT_TIME);
 			if (store_read(s->store, index, &value_tmp,
 				       &version_tmp) != 0) {
 				err_msg = "store_read() failed\n";
