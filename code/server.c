@@ -124,8 +124,27 @@ int main(int argc, char *argv[])
 		       info->message->port);
 #endif
 
+		// A better way is to use jump table to choose the correct semantics
 		if (role == CONSISTENCY_ROLE_BACKUP) {
-			pool_add(pool, consistency_read_my_writes_backup, info);
+			switch (semantics) {
+			case CONSISTENCY_SEMANTICS_EVENTUAL:
+				pool_add(pool, consistency_eventual_backup,
+					 info);
+				break;
+			case CONSISTENCY_SEMANTICS_READ_MY_WRITES:
+				pool_add(pool,
+					 consistency_read_my_writes_backup,
+					 info);
+				break;
+			case CONSISTENCY_SEMANTICS_MONOTONIC_READS:
+				pool_add(pool,
+					 consistency_monotonic_reads_backup,
+					 info);
+				break;
+			default:
+				// Should not hit here
+				break;
+			}
 		} else if (info->message->type == MESSAGE_BACKUP_ACK) {
 			struct message *msg = info->message;
 			struct consistency_thread *shelf =
@@ -166,7 +185,7 @@ int main(int argc, char *argv[])
 			free(info);
 			info = NULL;
 		} else {
-			// need to have some jump table to choose the correct semantics
+			// The primary has same behavior for different semantics
 			pool_add(pool, consistency_eventual_primary, info);
 		}
 	}
