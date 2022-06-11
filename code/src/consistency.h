@@ -3,7 +3,6 @@
 
 #include "message.h"
 #include "store.h"
-#include "synchronization.h"
 
 #define CONSISTENCY_ROLE_BACKUP 0
 #define CONSISTENCY_ROLE_PRIMARY 1
@@ -12,114 +11,104 @@
 #define CONSISTENCY_SEMANTICS_READ_MY_WRITES 1
 #define CONSISTENCY_SEMANTICS_MONOTONIC_READS 2
 
+#define CONSISTENCY_PRIMARY_WAIT_TIME 5 // seconds
+#define CONSISTENCY_BACKUP_WAIT_TIME 50 // micro seconds
+
 /**
- * @brief The consistency state for servers.
- * 
+ * @brief Synchronization information of worker threads.
+ *
  */
-struct consistency_state {
-	int role;
-	int semantics;
+struct consistency_thread {
+	pthread_mutex_t mutex;
+	pthread_cond_t cond;
+	struct message **msgs;
+	unsigned latest_client_msg_id;
+	unsigned *latest_msg_ids;
+	int block_flag;
+};
+
+/**
+ * @brief Information of servers for worker threads.
+ *
+ */
+struct consistency_server_state {
 	store_t store;
 	char *addr;
 	char *port;
 	int fd;
 
+	// For backup server.
+	int backup_id;
+
 	// For the primary server.
-	char *sync_addr;
-	char *sync_port;
-	int sync_fd;
 	int backup_num;
 	char **backup_addr;
 	char **backup_port;
-	struct synchronization_queue **sync_q;
-	struct synchronization_queue **sent_q;
-
-	// For backup servers.
-	char *primary_addr;
-	char *primary_port;
+	struct consistency_thread *shelf;
 };
 
 /**
- * @brief Handle requests with eventual consistency semantics by a backup server.
- * There are only two valid requests to handle: client's read and primary's sync.
- * Other requests will be ignored.
- * If any of the internal operations fail, the servers won't respond back and jump to a new cycle.
- * 
- * @param s the consistency state
- * @param req the requst
- * @return int 0 when no errors occur
+ * @brief Bundled information of servers and message for worker threads.
+ *
  */
-int consistency_eventual_backup(const struct consistency_state *s,
-				const struct message *req);
+struct consistency_handler_info {
+	unsigned id;
+	struct consistency_server_state *server;
+	struct message *message;
+};
 
 /**
- * @brief Handle requests with eventual consistency semantics by a primay server.
- * There are only two valid requests to handle: client's read and client's write.
- * Other requests will be ignored.
- * If the request is a client's write. New sync tasks will be added into the sync queues.
- * If any of the internal operations fail, the servers won't respond back and jump to a new cycle.
- * 
- * @param s the consistency state
- * @param req the requst
- * @return int 0 when no errors occur
+ * @brief Handle requests with eventual consistency semantics by a backup
+ * server.
+ *
+ * @param info bundled info struct
+ * @return void* 
  */
-int consistency_eventual_primary(const struct consistency_state *s,
-				 const struct message *req);
+void *consistency_eventual_backup(void *info);
 
 /**
- * @brief Handle requests with read-my-writes consistency semantics by a backup server.
- * There are only two valid requests to handle: client's read and primary's sync.
- * Other requests will be ignored.
- * If the version from the client is higher, the server will wait until it sees a newer version to return.
- * If any of the internal operations fail, the servers won't respond back and jump to a new cycle.
- * 
- * @param s the consistency state
- * @param req the requst
- * @return int 0 when no errors occur
+ * @brief Handle requests with eventual consistency semantics by the primary
+ * server.
+ *
+ * @param info bundled info struct
+ * @return void* 
  */
-int consistency_read_my_writes_backup(const struct consistency_state *s,
-				      const struct message *req);
+void *consistency_eventual_primary(void *info);
 
 /**
- * @brief Handle requests with read-my-writes consistency semantics by a primay server.
- * There are only two valid requests to handle: client's read and client's write.
- * Other requests will be ignored.
- * If the request is a client's write. New sync tasks will be added into the sync queues.
- * If any of the internal operations fail, the servers won't respond back and jump to a new cycle.
- * 
- * @param s the consistency state
- * @param req the requst
- * @return int 0 when no errors occur
+ * @brief Handle requests with read-my-writes consistency semantics by a backup
+ * server.
+ *
+ * @param info bundled info struct
+ * @return void* 
  */
-int consistency_read_my_writes_primary(const struct consistency_state *s,
-				       const struct message *req);
+void *consistency_read_my_writes_backup(void *info);
 
 /**
- * @brief Handle requests with monotonic reads consistency semantics by a backup server.
- * There are only two valid requests to handle: client's read and primary's sync.
- * Other requests will be ignored.
- * If the version from the client is higher, the server will wait until it sees a newer version to return.
- * If any of the internal operations fail, the servers won't respond back and jump to a new cycle.
- * 
- * @param s the consistency state
- * @param req the requst
- * @return int 0 when no errors occur
+ * @brief Handle requests with read-my-writes consistency semantics by the primary
+ * server.
+ *
+ * @param info bundled info struct
+ * @return void* 
  */
-int consistency_monotonic_reads_backup(const struct consistency_state *s,
-				       const struct message *req);
+void *consistency_read_my_writes_primary(void *info);
 
 /**
- * @brief Handle requests with monotonic reads consistency semantics by a primay server.
- * There are only two valid requests to handle: client's read and client's write.
- * Other requests will be ignored.
- * If the request is a client's write. New sync tasks will be added into the sync queues.
- * If any of the internal operations fail, the servers won't respond back and jump to a new cycle.
- * 
- * @param s the consistency state
- * @param req the requst
- * @return int 0 when no errors occur
+ * @brief Handle requests with monotonic reads consistency semantics by a backup
+ * server.
+ *
+ * @param info bundled info struct
+ * @return void* 
  */
-int consistency_monotonic_reads_primary(const struct consistency_state *s,
-					const struct message *req);
+void *consistency_monotonic_reads_backup(void *info);
+
+/**
+ * @brief Handle requests with monotonic reads consistency semantics by the primary
+ * server.
+ *
+ * @param info bundled info struct
+ * @return void* 
+ */
+void *consistency_monotonic_reads_primary(void *info);
 
 #endif

@@ -52,4 +52,10 @@ The logic for message handling is too complex and there are too many types of th
 
 The measurement running and analysis scripts are inside `measurement`.
 
-TODO: automatic measurement.
+Before running measurements, remote servers should be setup, scripts should be made executable, and `server` should be renamed to `primary_backup_server`, `client` to `primary_backup_client` and both of them are moved to the home directory.
+
+`remote.sh` is for connecting remote servers. `parameters.sh` is for setting parameters for measurements. Those are utility scripts and will be called by other scripts.
+
+`scan.sh` can generate scripts for a series of measurements and run the measurements. `retrieve.sh` is used to retrieve data from remote servers for analysis. It will also clean up files generated on remote servers. `kill.sh` is used to kill server and client processes on remote servers.
+
+When running `analyze.sh`, it will call `individual.R` to plot version difference and latency versus round, and `violation.R` to plot violations of consistency under different combinations of client thread numbers and store sizes.

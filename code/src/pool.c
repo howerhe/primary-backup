@@ -1,6 +1,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "pool.h"
 
@@ -19,11 +20,19 @@ struct pool {
 	pthread_cond_t cond;
 };
 
+struct task_info {
+	struct pool *pool;
+	unsigned id;
+};
+
 // Why static?
 static void *handler(void *args)
 {
-	pool_t *pool = (pool_t *)args;
+	struct pool *pool = ((struct task_info *)args)->pool;
+	unsigned id = ((struct task_info *)args)->id;
 	struct pool_task *task = NULL;
+	free(args);
+	args = NULL;
 
 	while (1) {
 		pthread_mutex_lock(&pool->lock);
@@ -41,6 +50,11 @@ static void *handler(void *args)
 
 		pthread_mutex_unlock(&pool->lock);
 
+		// The first 1 byte of args is always the thread id (unsigned). 
+		
+		// TODO: find a better way since this highly depends on compiler to
+		// arrage each field in a struc.
+		memcpy(task->args, &id, sizeof(unsigned));
 		task->routine(task->args);
 		free(task);
 	}
@@ -48,9 +62,9 @@ static void *handler(void *args)
 	return NULL;
 }
 
-pool_t *pool_init(unsigned size)
+pool_t pool_init(unsigned size)
 {
-	pool_t *pool = malloc(sizeof(pool_t));
+	struct pool *pool = malloc(sizeof(struct pool));
 	if (pool == NULL)
 		goto error;
 
@@ -66,7 +80,10 @@ pool_t *pool_init(unsigned size)
 		goto error;
 
 	for (int i = 0; i < pool->size; i++) {
-		if (pthread_create(&(pool->ids[i]), NULL, handler, pool) != 0)
+		struct task_info *info = malloc(sizeof(struct task_info));
+		info->pool = pool;
+		info->id = i;
+		if (pthread_create(&(pool->ids[i]), NULL, handler, info) != 0)
 			goto error;
 	}
 
@@ -79,7 +96,7 @@ error:
 	return NULL;
 }
 
-void pool_free(pool_t *pool)
+void pool_free(pool_t pool)
 {
 	if (pool == NULL)
 		return;
@@ -111,7 +128,7 @@ void pool_free(pool_t *pool)
 	pool = NULL;
 }
 
-int pool_add(pool_t *pool, void *(*routine)(void *), void *args)
+int pool_add(pool_t pool, void *(*routine)(void *), void *args)
 {
 	char *err_msg = NULL;
 
@@ -145,8 +162,8 @@ int pool_add(pool_t *pool, void *(*routine)(void *), void *args)
 	}
 	tmp = NULL;
 
-	pthread_mutex_unlock(&pool->lock);
 	pthread_cond_signal(&pool->cond);
+	pthread_mutex_unlock(&pool->lock);
 
 	return 0;
 

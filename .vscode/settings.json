@@ -4,8 +4,7 @@
         "message.h": "c",
         "pool.h": "c",
         "socket.h": "c",
-        "store.h": "c",
-        "synchronization.h": "c"
+        "store.h": "c"
     },
     "cSpell.words": [
         "zipf",

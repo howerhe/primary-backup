@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,15 +10,19 @@
 #include "message.h"
 #include "socket.h"
 #include "store.h"
-#include "synchronization.h"
 
-#define BACKUP_RETRY_TIME 2
+// #define DEBUG
 
-int consistency_eventual_backup(const struct consistency_state *s,
-				const struct message *req)
+void *consistency_eventual_backup(void *info)
 {
+	struct consistency_server_state *s =
+		((struct consistency_handler_info *)info)->server;
+	struct message *req =
+		((struct consistency_handler_info *)info)->message;
+	free(info);
+	info = NULL;
+
 	char *err_msg = NULL;
-	int rv = -1;
 	struct message *res;
 
 	if (s == NULL) {
@@ -32,6 +37,7 @@ int consistency_eventual_backup(const struct consistency_state *s,
 	if (res == NULL)
 		goto error;
 	memset(res, 0, sizeof(struct message));
+	assert(message_set_id(res) == 0);
 
 	enum message_type type = req->type;
 	unsigned index = req->index;
@@ -41,35 +47,23 @@ int consistency_eventual_backup(const struct consistency_state *s,
 	switch (type) {
 	case MESSAGE_CLIENT_READ:
 #ifdef DEBUG
-		printf("consistency_eventual_backup: MESSAGE_CLIENT_READ\n");
+		printf("MESSAGE_CLIENT_READ\n");
 #endif
-		type = MESSAGE_SERVER_RESPONSE;
+		type = MESSAGE_SERVER_RES;
 		if (store_read(s->store, index, &value, &version) != 0) {
 			err_msg = "store_read() failed\n";
 			goto error;
 		}
-#ifdef DEBUG
-		printf("- after: index %u, value %d, version %u\n", index,
-		       value, version);
-#endif
 		break;
 	case MESSAGE_PRIMARY_SYNC:
 #ifdef DEBUG
-		printf("consistency_eventual_backup: MESSAGE_PRIMARY_SYNC\n");
+		printf("MESSAGE_PRIMARY_SYNC\n");
 #endif
 		type = MESSAGE_BACKUP_ACK;
-#ifdef DEBUG
-		printf("- before: index %u, value %d, version %u\n", index,
-		       value, version);
-#endif
 		if (store_synchronize(s->store, index, &value, &version) != 0) {
 			err_msg = "store_synchronize() failed\n";
 			goto error;
 		}
-#ifdef DEBUG
-		printf("- after: index %u, value %d, version %u\n", index,
-		       value, version);
-#endif
 		break;
 	default:
 		err_msg = "unsupported message type\n";
@@ -84,32 +78,46 @@ int consistency_eventual_backup(const struct consistency_state *s,
 	strncpy(res->addr, s->addr, MESSAGE_ADDR_SIZE);
 	strncpy(res->port, s->port, MESSAGE_PORT_SIZE);
 
+	if (req->type == MESSAGE_PRIMARY_SYNC) {
+		res->client_message_id = req->client_message_id;
+		res->thread_id = req->thread_id;
+		res->backup_id = s->backup_id;
+	}
+
 	if (socket_send(s->fd, res, req->addr, req->port) != 0) {
 		err_msg = "cannot send message";
 		goto error;
 	}
-
-	rv = 0;
+#ifdef DEBUG
+	printf("sent\n");
+#endif
 
 clean:
 	free(res);
 	res = NULL;
-	return rv;
+	free(req);
+	req = NULL;
+	return NULL;
 
 error:
 	if (err_msg != NULL)
 		fprintf(stderr, "consistency_eventual_backup: %s\n", err_msg);
 	else
 		perror("consistency_eventual_backup");
-	rv = -1;
 	goto clean;
 }
 
-int consistency_eventual_primary(const struct consistency_state *s,
-				 const struct message *req)
+void *consistency_eventual_primary(void *info)
 {
+	unsigned tid = ((struct consistency_handler_info *)info)->id;
+	struct consistency_server_state *s =
+		((struct consistency_handler_info *)info)->server;
+	struct message *req =
+		((struct consistency_handler_info *)info)->message;
+	free(info);
+	info = NULL;
+
 	char *err_msg = NULL;
-	int rv = -1;
 	struct message *res;
 
 	if (s == NULL) {
@@ -124,6 +132,7 @@ int consistency_eventual_primary(const struct consistency_state *s,
 	if (res == NULL)
 		goto error;
 	memset(res, 0, sizeof(struct message));
+	assert(message_set_id(res) == 0);
 
 	enum message_type type = req->type;
 	unsigned index = req->index;
@@ -131,62 +140,25 @@ int consistency_eventual_primary(const struct consistency_state *s,
 	unsigned version = req->version;
 
 	switch (type) {
-	case MESSAGE_CLIENT_WRITE:
-#ifdef DEBUG
-		printf("consistency_eventual_primary: MESSAGE_CLIENT_WRITE\n");
-#endif
-		type = MESSAGE_SERVER_RESPONSE;
-#ifdef DEBUG
-		printf("- before: index %u, value %d, version %u\n", index,
-		       value, version);
-#endif
-		if (store_update(s->store, index, &value, &version) != 0) {
-			err_msg = "store_update() failed\n";
-			goto error;
-		} else {
-			for (int i = 0; i < s->backup_num; i++) {
-				// Assume it will not fail for now.
-				struct synchronization_task *t = malloc(
-					sizeof(struct synchronization_task));
-				assert(t);
-
-				t->version = version;
-				t->index = index;
-				t->value = value;
-				strncpy(t->addr, *(s->backup_addr + i),
-					MESSAGE_ADDR_SIZE);
-				strncpy(t->port, *(s->backup_port + i),
-					MESSAGE_PORT_SIZE);
-				t->next = NULL;
-				pthread_mutex_lock(&(*(s->sync_q + i))->lock);
-				synchronization_queue_enqueue(*(s->sync_q + i),
-							      t);
-				pthread_mutex_unlock(&(*(s->sync_q + i))->lock);
-				pthread_cond_signal(&(*(s->sync_q + i))->cond);
-			}
-		}
-#ifdef DEBUG
-		printf("- after: index %u, value %d, version %u\n", index,
-		       value, version);
-#endif
-		break;
 	case MESSAGE_CLIENT_READ:
 #ifdef DEBUG
-		printf("consistency_eventual_primary: MESSAGE_CLIENT_READ\n");
+		printf("MESSAGE_CLIENT_READ\n");
 #endif
-		type = MESSAGE_SERVER_RESPONSE;
-#ifdef DEBUG
-		printf("- before: index %u, value %d, version %u\n", index,
-		       value, version);
-#endif
+		type = MESSAGE_SERVER_RES;
 		if (store_read(s->store, index, &value, &version) != 0) {
 			err_msg = "store_read() failed\n";
 			goto error;
 		}
+		break;
+	case MESSAGE_CLIENT_WRITE:
 #ifdef DEBUG
-		printf("- after: index %u, value %d, version %u\n", index,
-		       value, version);
+		printf("MESSAGE_CLIENT_WRITE\n");
 #endif
+		type = MESSAGE_SERVER_RES;
+		if (store_update(s->store, index, &value, &version) != 0) {
+			err_msg = "store_update() failed\n";
+			goto error;
+		}
 		break;
 	default:
 		err_msg = "unsupported message type\n";
@@ -205,28 +177,120 @@ int consistency_eventual_primary(const struct consistency_state *s,
 		err_msg = "cannot send message";
 		goto error;
 	}
+#ifdef DEBUG
+	printf("client response sent\n");
+#endif
 
-	rv = 0;
+	if (req->type == MESSAGE_CLIENT_WRITE) {
+		struct consistency_thread *shelf = &(s->shelf[tid]);
+		shelf->latest_client_msg_id = req->client_message_id;
+
+		struct message *sync = malloc(sizeof(struct message));
+		assert(sync);
+
+		// Send out first round synchronization messages.
+		memset(sync, 0, sizeof(struct message));
+		sync->type = MESSAGE_PRIMARY_SYNC;
+		sync->index = index;
+		sync->value = value;
+		sync->version = version;
+		strncpy(sync->addr, s->addr, MESSAGE_ADDR_SIZE);
+		strncpy(sync->port, s->port, MESSAGE_PORT_SIZE);
+		sync->client_message_id = req->client_message_id;
+		sync->thread_id = tid;
+		for (int i = 0; i < s->backup_num; i++) {
+			assert(message_set_id(sync) == 0);
+			if (socket_send(s->fd, sync, s->backup_addr[i],
+					s->backup_port[i]) != 0) {
+				err_msg = "cannot send message";
+				goto error;
+			}
+		}
+
+		int synced_num = 0;
+		int *synced_flag = malloc(sizeof(int) * s->backup_num);
+		assert(synced_flag);
+		for (int i = 0; i < s->backup_num; i++)
+			synced_flag[i] = 0;
+		struct timespec t;
+		clock_gettime(CLOCK_REALTIME, &t);
+		t.tv_sec += CONSISTENCY_PRIMARY_WAIT_TIME;
+
+		while (1) {
+			pthread_mutex_lock(&(shelf->mutex));
+			int rv = 0;
+			while (shelf->block_flag == 1) {
+				rv = pthread_cond_timedwait(
+					&(shelf->cond), &(shelf->mutex), &t);
+				if (rv == ETIMEDOUT)
+					break;
+			}
+			shelf->block_flag = 1;
+
+#ifdef DEBUG
+			printf("SYNC waked up: ");
+			if (rv == ETIMEDOUT)
+				printf("timed out\n");
+			else
+				printf("by backup\n");
+#endif
+
+			for (int i = 0; i < s->backup_num; i++) {
+				if (rv == ETIMEDOUT && synced_flag[i] == 0) {
+					assert(message_set_id(sync) == 0);
+					assert(socket_send(s->fd, sync,
+							   s->backup_addr[i],
+							   s->backup_port[i]) ==
+					       0);
+				} else if (rv == 0 && shelf->msgs[i] != NULL &&
+					   synced_flag[i] == 0) {
+					synced_flag[i] = 1;
+					synced_num++;
+					free(shelf->msgs[i]);
+					shelf->msgs[i] = NULL;
+				}
+			}
+
+			pthread_mutex_unlock(&(s->shelf[tid].mutex));
+			if (synced_num == s->backup_num)
+				break;
+		}
+
+		free(synced_flag);
+		synced_flag = NULL;
+		free(sync);
+		sync = NULL;
+		shelf = NULL;
+	}
+#ifdef DEBUG
+	printf("sync finished\n");
+#endif
 
 clean:
 	free(res);
 	res = NULL;
-	return rv;
+	free(req);
+	req = NULL;
+	return NULL;
 
 error:
 	if (err_msg != NULL)
 		fprintf(stderr, "consistency_eventual_primary: %s\n", err_msg);
 	else
 		perror("consistency_eventual_primary");
-	rv = -1;
 	goto clean;
 }
 
-int consistency_read_my_writes_backup(const struct consistency_state *s,
-				      const struct message *req)
+void *consistency_read_my_writes_backup(void *info)
 {
+	struct consistency_server_state *s =
+		((struct consistency_handler_info *)info)->server;
+	struct message *req =
+		((struct consistency_handler_info *)info)->message;
+	free(info);
+	info = NULL;
+
 	char *err_msg = NULL;
-	int rv = -1;
 	struct message *res;
 
 	if (s == NULL) {
@@ -241,30 +305,26 @@ int consistency_read_my_writes_backup(const struct consistency_state *s,
 	if (res == NULL)
 		goto error;
 	memset(res, 0, sizeof(struct message));
+	assert(message_set_id(res) == 0);
 
 	enum message_type type = req->type;
 	unsigned index = req->index;
 	int value = req->value;
 	unsigned version = req->version;
-	unsigned last_write = req->last_read;
+	unsigned last_write = req->last_write;
 
 	switch (type) {
 	case MESSAGE_CLIENT_READ:
 #ifdef DEBUG
-		printf("consistency_eventual_backup: MESSAGE_CLIENT_READ\n");
+		printf("MESSAGE_CLIENT_READ\n");
 #endif
-		type = MESSAGE_SERVER_RESPONSE;
+		type = MESSAGE_SERVER_RES;
 		int value_tmp;
 		unsigned version_tmp;
 		int loop_counter = 0;
 		do {
-			if (loop_counter > 0) {
-				sleep(BACKUP_RETRY_TIME);
-#ifdef DEBUG
-				printf("- old version, retrying %d times\n",
-				       loop_counter);
-#endif
-			}
+			if (loop_counter > 0)
+				usleep(CONSISTENCY_BACKUP_WAIT_TIME);
 			if (store_read(s->store, index, &value_tmp,
 				       &version_tmp) != 0) {
 				err_msg = "store_read() failed\n";
@@ -274,28 +334,16 @@ int consistency_read_my_writes_backup(const struct consistency_state *s,
 		} while (version_tmp < last_write);
 		value = value_tmp;
 		version = version_tmp;
-#ifdef DEBUG
-		printf("- after: index %u, value %d, version %u\n", index,
-		       value, version);
-#endif
 		break;
 	case MESSAGE_PRIMARY_SYNC:
 #ifdef DEBUG
-		printf("consistency_eventual_backup: MESSAGE_PRIMARY_SYNC\n");
+		printf("MESSAGE_PRIMARY_SYNC\n");
 #endif
 		type = MESSAGE_BACKUP_ACK;
-#ifdef DEBUG
-		printf("- before: index %u, value %d, version %u\n", index,
-		       value, version);
-#endif
 		if (store_synchronize(s->store, index, &value, &version) != 0) {
 			err_msg = "store_synchronize() failed\n";
 			goto error;
 		}
-#ifdef DEBUG
-		printf("- after: index %u, value %d, version %u\n", index,
-		       value, version);
-#endif
 		break;
 	default:
 		err_msg = "unsupported message type\n";
@@ -310,40 +358,51 @@ int consistency_read_my_writes_backup(const struct consistency_state *s,
 	strncpy(res->addr, s->addr, MESSAGE_ADDR_SIZE);
 	strncpy(res->port, s->port, MESSAGE_PORT_SIZE);
 
+	if (req->type == MESSAGE_PRIMARY_SYNC) {
+		res->client_message_id = req->client_message_id;
+		res->thread_id = req->thread_id;
+		res->backup_id = s->backup_id;
+	}
+
 	if (socket_send(s->fd, res, req->addr, req->port) != 0) {
 		err_msg = "cannot send message";
 		goto error;
 	}
-
-	rv = 0;
+#ifdef DEBUG
+	printf("sent\n");
+#endif
 
 clean:
 	free(res);
 	res = NULL;
-	return rv;
+	free(req);
+	req = NULL;
+	return NULL;
 
 error:
 	if (err_msg != NULL)
-		fprintf(stderr, "consistency_monotonic_reads_backup: %s\n",
+		fprintf(stderr, "consistency_read_my_writes_backup: %s\n",
 			err_msg);
 	else
-		perror("consistency_monotonic_reads_backup");
-	rv = -1;
+		perror("consistency_read_my_writes_backup");
 	goto clean;
 }
 
-int consistency_read_my_writes_primary(const struct consistency_state *s,
-				       const struct message *req)
+void *consistency_read_my_writes_primary(void *info)
 {
-	// Just use eventual_primary for now.
-	return consistency_eventual_primary(s, req);
+	return consistency_eventual_primary(info);
 }
 
-int consistency_monotonic_reads_backup(const struct consistency_state *s,
-				       const struct message *req)
+void *consistency_monotonic_reads_backup(void *info)
 {
+	struct consistency_server_state *s =
+		((struct consistency_handler_info *)info)->server;
+	struct message *req =
+		((struct consistency_handler_info *)info)->message;
+	free(info);
+	info = NULL;
+
 	char *err_msg = NULL;
-	int rv = -1;
 	struct message *res;
 
 	if (s == NULL) {
@@ -358,6 +417,7 @@ int consistency_monotonic_reads_backup(const struct consistency_state *s,
 	if (res == NULL)
 		goto error;
 	memset(res, 0, sizeof(struct message));
+	assert(message_set_id(res) == 0);
 
 	enum message_type type = req->type;
 	unsigned index = req->index;
@@ -368,20 +428,15 @@ int consistency_monotonic_reads_backup(const struct consistency_state *s,
 	switch (type) {
 	case MESSAGE_CLIENT_READ:
 #ifdef DEBUG
-		printf("consistency_eventual_backup: MESSAGE_CLIENT_READ\n");
+		printf("MESSAGE_CLIENT_READ\n");
 #endif
-		type = MESSAGE_SERVER_RESPONSE;
+		type = MESSAGE_SERVER_RES;
 		int value_tmp;
 		unsigned version_tmp;
 		int loop_counter = 0;
 		do {
-			if (loop_counter > 0) {
-				sleep(BACKUP_RETRY_TIME);
-#ifdef DEBUG
-				printf("- old version, retrying %d times\n",
-				       loop_counter);
-#endif
-			}
+			if (loop_counter > 0)
+				usleep(CONSISTENCY_BACKUP_WAIT_TIME);
 			if (store_read(s->store, index, &value_tmp,
 				       &version_tmp) != 0) {
 				err_msg = "store_read() failed\n";
@@ -391,28 +446,16 @@ int consistency_monotonic_reads_backup(const struct consistency_state *s,
 		} while (version_tmp < last_read);
 		value = value_tmp;
 		version = version_tmp;
-#ifdef DEBUG
-		printf("- after: index %u, value %d, version %u\n", index,
-		       value, version);
-#endif
 		break;
 	case MESSAGE_PRIMARY_SYNC:
 #ifdef DEBUG
-		printf("consistency_eventual_backup: MESSAGE_PRIMARY_SYNC\n");
+		printf("MESSAGE_PRIMARY_SYNC\n");
 #endif
 		type = MESSAGE_BACKUP_ACK;
-#ifdef DEBUG
-		printf("- before: index %u, value %d, version %u\n", index,
-		       value, version);
-#endif
 		if (store_synchronize(s->store, index, &value, &version) != 0) {
 			err_msg = "store_synchronize() failed\n";
 			goto error;
 		}
-#ifdef DEBUG
-		printf("- after: index %u, value %d, version %u\n", index,
-		       value, version);
-#endif
 		break;
 	default:
 		err_msg = "unsupported message type\n";
@@ -427,17 +470,26 @@ int consistency_monotonic_reads_backup(const struct consistency_state *s,
 	strncpy(res->addr, s->addr, MESSAGE_ADDR_SIZE);
 	strncpy(res->port, s->port, MESSAGE_PORT_SIZE);
 
+	if (req->type == MESSAGE_PRIMARY_SYNC) {
+		res->client_message_id = req->client_message_id;
+		res->thread_id = req->thread_id;
+		res->backup_id = s->backup_id;
+	}
+
 	if (socket_send(s->fd, res, req->addr, req->port) != 0) {
 		err_msg = "cannot send message";
 		goto error;
 	}
-
-	rv = 0;
+#ifdef DEBUG
+	printf("sent\n");
+#endif
 
 clean:
 	free(res);
 	res = NULL;
-	return rv;
+	free(req);
+	req = NULL;
+	return NULL;
 
 error:
 	if (err_msg != NULL)
@@ -445,13 +497,10 @@ error:
 			err_msg);
 	else
 		perror("consistency_monotonic_reads_backup");
-	rv = -1;
 	goto clean;
 }
 
-int consistency_monotonic_reads_primary(const struct consistency_state *s,
-					const struct message *req)
+void *consistency_monotonic_reads_primary(void *info)
 {
-	// Just use eventual_primary for now.
-	return consistency_eventual_primary(s, req);
+	return consistency_eventual_primary(info);
 }
