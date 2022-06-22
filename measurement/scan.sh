@@ -19,8 +19,8 @@ do
         cd $directory
 
         # usage for primary: ./server 1 sematics_code thread_num store_size self_addr self_port backup_addr backup_port ...
-        echo "echo 'starting primary...'" >> script.sh
-        echo "ssh $PRIMARY './primary_backup_server $server_semantics_code $server_thread $store $PRIMARY_ADDR $PRIMARY_PORT $BACKUP1_ADDR $BACKUP1_PORT $BACKUP2_ADDR $BACKUP2_PORT $BACKUP3_ADDR $BACKUP3_PORT 2>primary_error.log' &" >> script.sh
+        echo "echo 'starting primary...'" > script.sh
+        echo "ssh $PRIMARY './primary_backup_server 1 $server_semantics_code $server_thread $store $PRIMARY_ADDR $PRIMARY_PORT $BACKUP1_ADDR $BACKUP1_PORT $BACKUP2_ADDR $BACKUP2_PORT $BACKUP3_ADDR $BACKUP3_PORT 2>primary_error.log' &" >> script.sh
 
         # usage for backup: ./server 0 sematics_code thread_num store_size self_addr self_port backup_id
         echo "echo 'starting backup0...'" >> script.sh
@@ -66,6 +66,7 @@ do
         ssh $BACKUP1 "ps -ef | grep primary_backup_server | grep -v grep | awk '{print \$2}' | xargs kill"
         ssh $BACKUP2 "ps -ef | grep primary_backup_server | grep -v grep | awk '{print \$2}' | xargs kill"
         ssh $BACKUP3 "ps -ef | grep primary_backup_server | grep -v grep | awk '{print \$2}' | xargs kill"
+        ssh $CLIENT1 "ps -ef | grep primary_backup_client | grep -v grep | awk '{print \$2}' | xargs kill"
 
         echo "moving results into their directory..."
         ssh $CLIENT1 "mkdir $directory"

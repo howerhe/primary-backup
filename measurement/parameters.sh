@@ -8,9 +8,9 @@ export client_semantics_code=0
 echo "server semantics code: $server_semantics_code"
 echo "client semantics code: $client_semantics_code"
 
-# Total requests from client: 2^18 = 262144
+# Total requests from client: 2^20 = 1048576
 # total_request = thread * msg_num
-export total_request=262144
+export total_request=1048576
 
 echo "total requests: $total_request"
 

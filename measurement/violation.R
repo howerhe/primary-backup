@@ -1,5 +1,8 @@
 #!/usr/bin/env Rscript
-library(tidyverse)
+suppressPackageStartupMessages(library(conflicted))
+suppressPackageStartupMessages(library(tidyverse))
+
+options(readr.show_col_types = FALSE)
 
 # Read data.
 violations = read_csv("violation_summary.csv")
