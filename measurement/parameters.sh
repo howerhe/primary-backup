@@ -29,4 +29,4 @@ echo "threads per client: 2^$client_thread_lower_bound to 2^$client_thread_upper
 export store_lower_bound=1
 export store_upper_bound=7
 
-echo "storage size: 4^$store_lower_bound to 4^$store_upper_bound"
+echo "storage size: 8^$store_lower_bound to 8^$store_upper_bound"

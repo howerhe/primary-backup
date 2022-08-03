@@ -35,17 +35,24 @@ for (i in (1:thread_num)) {
   mixed[[i]] %>%
     mutate(semantic_version_diff = remote_version - local_version) ->
     analyzing
+  
   primary_violation_flag = FALSE
+  request_num = length(analyzing[[1]])
+  start = as.integer(request_num * 1/5)
+  end = as.integer(request_num * 4/5)
   
   if (semantics == "1") { # read-my-writes
     last_write_version <- rep(list(0), store_size)
-    for (j in (1:length(analyzing))) {
+    for (j in (1:request_num)) {
+      if (j > end) {
+        break
+      }
       index = analyzing[[2]][[j]] + 1
       remote_version = analyzing[[8]][[j]]
       if (analyzing[[3]][[j]] == "0") {
         semantic_version_diff = remote_version - last_write_version[[index]]
         analyzing[[10]][[j]] = semantic_version_diff
-        if (semantic_version_diff < 0) {
+        if (semantic_version_diff < 0 && j >= start) {
           violations = violations + 1
         }
       } else {
@@ -58,13 +65,16 @@ for (i in (1:thread_num)) {
     }
   } else if (semantics == "2") { # monotonic-reads
     last_read_version <- rep(list(0), store_size)
-    for (j in (1:length(analyzing))) {
+    for (j in (1:request_num)) {
+      if (j > end) {
+        break
+      }
       index = analyzing[[2]][[j]] + 1
       remote_version = analyzing[[8]][[j]]
       if (analyzing[[3]][[j]] == "0") {
         semantic_version_diff = remote_version - last_read_version[[index]]
         analyzing[[10]][[j]] = semantic_version_diff
-        if (semantic_version_diff < 0) {
+        if (semantic_version_diff < 0 && j >= start) {
           violations = violations + 1
         } else { # Update last read when there's no violation.
           last_read_version[[index]] = remote_version
@@ -85,8 +95,7 @@ for (i in (1:thread_num)) {
   }
   
   # Keep 3/5 of data in the middle.
-  request_num = length(analyzing[[1]])
-  analyzing = analyzing[c(as.integer(request_num * 1/5):as.integer(request_num * 4/5)),]
+  analyzing = analyzing[c(start:end),]
   analyzing %>%
     dplyr::filter(operation == "0") ->
     backup[[i]]
@@ -98,7 +107,7 @@ for (i in (1:thread_num)) {
 
 close(out)
 
-# Plot the graphs.
+# Plot the graphs (read request only).
 p_version = list()
 p_latency = list()
 for (i in (1:thread_num)) {
