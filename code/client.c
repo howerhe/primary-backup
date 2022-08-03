@@ -285,15 +285,13 @@ void *client_routine(void *arg)
 					 (end.tv_usec - start.tv_usec);
 			remote_value = res.value;
 			remote_version = res.version;
-			if (semantics_code == SEMANTICS_READ_MY_WRITES) {
-				if (remote_version > local_version) {
-					(store + index)->value = remote_value;
-					(store + index)->version =
-						remote_version;
-					(store + index)->last_write =
-						remote_version;
-				}
-			}
+			// if (semantics_code == SEMANTICS_READ_MY_WRITES) {
+			// if (remote_version > local_version) {
+			(store + index)->value = remote_value;
+			(store + index)->version = remote_version;
+			(store + index)->last_write = remote_version;
+			// 	}
+			// }
 		}
 
 		// Store the result.

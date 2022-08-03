@@ -38,14 +38,14 @@ int store_read(store_t s, unsigned index, int *value, unsigned *version);
 
 /**
  * @brief Update a store at the block index with the new value. The version at
- * that block index increments by 1.
+ * that block index increments by 1 to its internal version.
  *
  * @param s store
  * @param index block index
  * @param value pointer to the value replacing the value at that block index,
  * and will be set with the value at that block index
  * @param version pointer to the version to be set with the version at that
- * block index after incremention
+ * block index after increment
  * @return 0 when no error occurs
  */
 int store_update(store_t s, unsigned index, int *value, unsigned *version);
