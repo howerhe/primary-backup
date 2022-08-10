@@ -61,7 +61,7 @@ int main(void)
 	rv = store_update(s, 0, &value, &version);
 	assert(rv == 0);
 	assert(value == 5);
-	assert(version == 2);
+	assert(version == 2); // version is updated internally.
 	value = 0;
 	version = 0;
 	rv = store_read(s, 0, &value, &version);

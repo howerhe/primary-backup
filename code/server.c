@@ -151,6 +151,7 @@ int main(int argc, char *argv[])
 				&(s->shelf[msg->thread_id]);
 
 			pthread_mutex_lock(&(shelf->mutex));
+			// Ignore.
 			if (msg->client_message_id !=
 				    shelf->latest_client_msg_id ||
 			    msg->id < shelf->latest_msg_ids[msg->backup_id]) {

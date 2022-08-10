@@ -252,6 +252,8 @@ void *consistency_eventual_primary(void *info)
 			}
 
 			pthread_mutex_unlock(&(s->shelf[tid].mutex));
+
+			// Have received synchronization acknowledgement from all backups.
 			if (synced_num == s->backup_num)
 				break;
 		}
@@ -331,7 +333,7 @@ void *consistency_read_my_writes_backup(void *info)
 				goto error;
 			}
 			loop_counter++;
-		} while (version_tmp < last_write);
+		} while (version_tmp < last_write); // Enforcing read-my-writes.
 		value = value_tmp;
 		version = version_tmp;
 		break;
@@ -390,6 +392,7 @@ error:
 
 void *consistency_read_my_writes_primary(void *info)
 {
+	// For now it's the same as eventual.
 	return consistency_eventual_primary(info);
 }
 
@@ -443,7 +446,7 @@ void *consistency_monotonic_reads_backup(void *info)
 				goto error;
 			}
 			loop_counter++;
-		} while (version_tmp < last_read);
+		} while (version_tmp < last_read); // Enforcing monotonic read.
 		value = value_tmp;
 		version = version_tmp;
 		break;
@@ -502,5 +505,6 @@ error:
 
 void *consistency_monotonic_reads_primary(void *info)
 {
+	// For now it's the same as eventual.
 	return consistency_eventual_primary(info);
 }

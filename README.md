@@ -1,6 +1,6 @@
 # Primary-Backup
 
-Code and measurement scripts for different semantics of primary-backup servers.
+Code and measurement scripts for different semantics of primary-backup servers. It is used to measure semantic violations when servers and clients are using different consistency semantics.
 
 Run `setup.sh` to start.
 
@@ -18,19 +18,13 @@ Code for Zipf's distribution is provided by Dr. Ji-Yong Shin, and is in `zipf`.
 
 ### Server
 
-When the primary server starts, there is a main thread listening to requests from clients in a loop, a `synchronize_receiver` thread listening to response from backup servers in a loop, `synchronize_sender` and `synchronize_refresher` threads whose numbers are equal to the number of backup servers. The equal number of `sync_q` and `sent_q` are also initiated for synchronization messages and sent messages.
+When a server starts, there is a main thread listening to requests from clients in a loop, and a thread pool with indicated number of threads to handle incoming requests.
 
-The life cycle of a message in primary server is like following. Firstly, a request from a client is received by the main thread and handled by a thread from a thread pool with `request_handler` routine. This routine can run functions corresponding to the semantics for the primary server.
+The life cycle of a message from clients or a synchronization message from the primary is like following. A request is received by the main thread and handled by a thread from the thread pool with corresponding handling functions. And the life for this message ends.
 
-If the request is a read request, the life should end after the function respond to the client.
+For backups, if the message is a synchronization request from the primary, it will synchronize its own store, and then send back acknowledgement to the primary. If the message is a read request from a client, it will read from its own store, and wait for finishing synchronization at the index (from other threads) (depends on consistency semantics used and version number), then it will send response back to clients.
 
-It it's a write request, the store of the primary is updated first, and then synchronization to backup servers starts. For a single backup server, there is a specific `sync_q`. When a new synchronization task is enqueued, a signal can alarm the dedicated `synchronize_sender` to send this message to the specific backup server, and the dequeued task in enqueued into `sent_q`.
-
-If the synchronization is successful at the backup, a response can be received by the `synchronize_receiver` thread, and the task is removed from the `sent_q`. The comparing and removal is conducted by a thread from the thread pool with `synchronize_handler` routine. There are situations that the synchronization fails or is too slow. The dedicated `synchronize_refresher` thread scans `sent_q` according to a timer. If there are messages that are older than a threshold, these messages are moved backup to `sync_q` and synchronizations are tried again.
-
-Notice that to distinguish request source easier, the port for the clients and the port for the backup servers are not the same. Each backup server has its specific `synchronize_sender`, `synchronize_refresher`, `sync_q` and `sent_q`. `request_handler` and `synchronize_handler` share the same thread pool.
-
-The logic for backup servers are much simpler. It only has a main thread, and a thread pool for `request_handler` threads.
+If it's a write request to the primary, the store of the primary is updated first, and then synchronization to backup servers starts. Firstly, the handling thread handling will send synchronization messages to backups. Then the thread enters a timed conditional wait. There is a data structure to store synchronization acknowledgement messages for each working thread. Synchronization acknowledgement messages are kept in a message queue and it will alarm the working thread in the primary to check whether the synchronizations has finished. The thread can also wake up after a timeout. If there are backups that haven't finished synchronization, synchronization requests will be sent to those backups again.
 
 ### Client
 
@@ -40,13 +34,9 @@ For each single `client_routine`, it starts with a random number with Zipf's dis
 
 ### Potential Improvement
 
-The client should not have big problems.
+The client would hang when the number of request is large, and when the servers are using monotonic read and clients are using read-my-writes.
 
-The queues and stores used in servers need further inspection. Locks are used. There might be situations where dead lock happens.
-
-There are too many sockets for the primary server. There should be a better approach to distinguish message source, sequence, and to avoid congestions (e.g. timeout).
-
-The logic for message handling is too complex and there are too many types of threads. This happened before thread pool was introduced. If a better approach is used to distinguish message source and avoid hanging, and thread are redesigned with the idea of thread pool, the whole structure can be simplified.
+"primary violation" occurs in some experiments.
 
 ## Measurement
 
@@ -59,3 +49,5 @@ Before running measurements, remote servers should be setup, scripts should be m
 `scan.sh` can generate scripts for a series of measurements and run the measurements. `retrieve.sh` is used to retrieve data from remote servers for analysis. It will also clean up files generated on remote servers. `kill.sh` is used to kill server and client processes on remote servers.
 
 When running `analyze.sh`, it will call `individual.R` to plot version difference and latency versus round, and `violation.R` to plot violations of consistency under different combinations of client thread numbers and store sizes.
+
+So for a typical experiment and measurement, modify parameters in `parameters.sh` first. Then run `scan.sh`. After experiments on remote servers finish, run `retrieve.sh`. If the program hang, run `kill.sh` and do a manual cleaning on remote servers. After finishing retrieval, run `analyze.sh` to get measurement.
