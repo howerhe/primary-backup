@@ -31,6 +31,7 @@ latency_max = 0
 
 out = file("primary_errors.txt", "w")
 
+# Note in R column comes first, then comes row.
 for (i in (1:thread_num)) {
   mixed[[i]] %>%
     mutate(semantic_version_diff = remote_version - local_version) ->
@@ -41,6 +42,7 @@ for (i in (1:thread_num)) {
   start = as.integer(request_num * 1/5)
   end = as.integer(request_num * 4/5)
   
+  # This script cannot handle eventual consistency.
   if (semantics == "1") { # read-my-writes
     last_write_version <- rep(list(0), store_size)
     for (j in (1:request_num)) {

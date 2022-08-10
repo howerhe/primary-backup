@@ -17,11 +17,16 @@
 
 // #define DEBUG
 
+// Codes for semantics.
 #define SEMANTICS_EVENTUAL 0
 #define SEMANTICS_READ_MY_WRITES 1
 #define MONOTONIC_READS 2
+
+// Constant needed for zipf distribution.
 #define ZIPF_ALPHA 1
 
+// Block store for clients. Each client thread has its own store. No concurrent
+// access.
 struct local_store {
 	int value;
 	unsigned version;
@@ -29,17 +34,20 @@ struct local_store {
 	unsigned last_write;
 };
 
+// Experiment record. Kept in the memory instead of standard output for
+// efficiency.
 struct log {
 	int index;
-	unsigned operation;
-	int n_or_b;
-	int local_value;
-	unsigned local_version;
-	int remote_value;
-	unsigned remote_version;
-	long long remote_elapsed;
+	unsigned operation;			// 0 = read, 1 = update
+	int n_or_b;					// new value or backup number
+	int local_value;			// value before reade/update operation
+	unsigned local_version;		// version before reade/update operation
+	int remote_value; 			// value from remote server
+	unsigned remote_version;	// version from remote server
+	long long remote_elapsed;	// micro seconds taken to finish an operation
 };
 
+// Information for client thread.
 struct info {
 	struct log *log;
 	struct local_store *store;
@@ -47,6 +55,7 @@ struct info {
 	int fd;
 };
 
+// Routine function for client thread.
 void *client_routine(void *arg);
 
 int semantics_code;
@@ -110,6 +119,8 @@ int main(int argc, char *argv[])
 			(info->store + j)->last_write = 0;
 		}
 
+		// Different ports are used for different thread to avoid mixing of
+		// messages from servers.
 		int port = (int)strtol(self_port, NULL, 0);
 		sprintf(info->port, "%d", port - i);
 
@@ -194,6 +205,7 @@ void *client_routine(void *arg)
 	char *port = ((struct info *)arg)->port;
 	int fd = ((struct info *)arg)->fd;
 
+	// Note that the thread would hang if there's no response from servers.
 	for (int i = 0; i < msg_num; i++) {
 #ifdef DEBUG
 		printf("round %d\n", i);
@@ -204,10 +216,15 @@ void *client_routine(void *arg)
 		memset(&req, 0, sizeof(req));
 		memset(&res, 0, sizeof(req));
 
+		// Index is from zipf distribution.
 		// unsigned index = rand() % store_size;
 		unsigned index = (unsigned)zipf_blk();
+		// Operation (read, write) is from normal distribution.
 		int operation = rand() % 2;
+		// New value or backup number is from normal distribution (will be seen
+		// later).
 		int n_or_b;
+
 		int local_value, remote_value;
 		unsigned local_version, remote_version;
 		long long remote_elapsed;
@@ -285,6 +302,8 @@ void *client_routine(void *arg)
 					 (end.tv_usec - start.tv_usec);
 			remote_value = res.value;
 			remote_version = res.version;
+
+			// TODO: some bugs to fix.
 			if (semantics_code == SEMANTICS_READ_MY_WRITES) {
 				if (remote_version > local_version) {
 					(store + index)->value = remote_value;

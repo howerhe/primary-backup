@@ -8,6 +8,7 @@
 #include "message.h"
 #include "socket.h"
 
+// Helper functions for addrinfo.
 struct addrinfo *ai_create(const char *address, const char *port);
 void ai_destroy(struct addrinfo *ai);
 
